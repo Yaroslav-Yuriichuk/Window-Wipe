@@ -1,0 +1,62 @@
+#pragma kernel Wipe THREADS_X=16 THREADS_Y=16
+
+RWTexture2D<float4> _WindowRenderTexture;
+
+float _FullWipeRadius;
+float _FadeWipeRadius;
+float _InteractionTime;
+float _WipeTime;
+float2 _WipeTextureCoordinates;
+
+
+float distance(const float2 a, const float2 b)
+{
+    return sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y));
+}
+
+[numthreads(THREADS_X, THREADS_Y, 1)]
+void Wipe (uint3 id : SV_DispatchThreadID)
+{
+    uint windowWidth, windowHeight;
+    _WindowRenderTexture.GetDimensions(windowWidth, windowHeight);
+
+    if (id.x >= windowWidth || id.y >= windowHeight)
+    {
+        return;    
+    }
+
+    const float4 initialColor = _WindowRenderTexture[id.xy];
+    const float2 centerPixel = float2(windowWidth * _WipeTextureCoordinates.x, windowHeight * _WipeTextureCoordinates.y);
+
+    const float distanceFromCenter = distance(centerPixel, float2(id.x, id.y));
+    
+    if (distanceFromCenter <= windowHeight * _FullWipeRadius)
+    {
+        float4 color = initialColor;
+        color.w = _WipeTime == 0 ? 0 : max(initialColor.w - _InteractionTime / _WipeTime, 0);
+        
+        _WindowRenderTexture[id.xy] = color;
+        return;
+    }
+
+    if (distanceFromCenter > windowHeight * _FadeWipeRadius)
+    {
+        return;
+    }
+    
+    float4 color = initialColor;
+    const float targetAlpha = (distanceFromCenter - windowHeight * _FullWipeRadius)
+        / windowHeight
+        / (_FadeWipeRadius - _FullWipeRadius);
+
+    if (targetAlpha >= initialColor.w)
+    {
+        return;
+    }
+    
+    color.w = _WipeTime == 0
+                  ? targetAlpha
+                  : max(initialColor.w - (1 - targetAlpha) * _InteractionTime / _WipeTime, targetAlpha);
+    
+    _WindowRenderTexture[id.xy] = color;
+}
